@@ -3,7 +3,7 @@ import { ChatMessage } from "../store/chatHistory";
 import { UserSettings, DEFAULT_SETTINGS } from "../store/userSettings";
 import { Skill } from "../store/skills";
 import { User } from "../store/users";
-import { isIncognito } from "../store/privacy";
+import { isIncognito, injectFactsIntoPrompt } from "../store/privacy";
 import {
   buildContextWindow,
   prepareMessagesForAPI,
@@ -138,9 +138,9 @@ export function buildSystemPrompt(
     );
   }
 
-  // 10b. Privacy rule (all users)
+  // 10b. Privacy rule (all users) — non-negotiable
   parts.push(
-    "PRIVACY: Du darfst NIEMALS private Informationen eines Familienmitglieds an ein anderes weitergeben. Jeder Benutzer hat seinen eigenen geschützten Kontext. Respektiere den Inkognito-Modus – wenn aktiv, speichere keine Informationen."
+    "DATENSCHUTZ-REGEL (nicht verhandelbar): Du darfst NIEMALS Informationen aus anderen Familienmitglieder-Gesprächen teilen oder darauf hinweisen. Jeder Benutzer hat einen vollständig isolierten, privaten Kontext. Wenn jemand nach privaten Daten einer anderen Person fragt: Antworte NUR 'Diese Information ist privat.' Respektiere den Inkognito-Modus – wenn aktiv, verwende das Gedächtnis nicht und speichere nichts."
   );
 
   // 11. Custom instructions
@@ -185,9 +185,21 @@ export async function sendMessage(
   const serverUrl = await getServerUrl();
   const model = await getServerModel();
   const s = settings || DEFAULT_SETTINGS;
-  const systemPrompt = user
+
+  // Build base prompt
+  let systemPrompt = user
     ? buildSystemPrompt(user, s, activeSkills)
     : "Du bist Nexus, ein persönlicher KI-Assistent.";
+
+  // Inject knowledge facts (skip in incognito mode)
+  if (user && !isIncognito(user.username)) {
+    try {
+      const factsBlock = await injectFactsIntoPrompt(user.username, user.role);
+      if (factsBlock) systemPrompt += factsBlock;
+    } catch {
+      // non-fatal — continue without facts
+    }
+  }
 
   // Use context manager for smart windowing
   let apiMessages: AnthropicMessage[];

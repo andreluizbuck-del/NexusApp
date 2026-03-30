@@ -34,7 +34,7 @@ const CATEGORY_LABELS: Record<FactCategory, { label: string; icon: string }> = {
   health: { label: "Gesundheit", icon: "🏥" },
   schedule: { label: "Termine", icon: "📅" },
   preference: { label: "Vorlieben", icon: "❤️" },
-  contact: { label: "Kontakte", icon: "📇" },
+  work: { label: "Arbeit", icon: "💼" },
   other: { label: "Sonstiges", icon: "📝" },
 };
 
@@ -54,9 +54,11 @@ export default function MemoryScreen() {
   });
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addVisibilityPreset, setAddVisibilityPreset] = useState<FactVisibility>("private");
   const [newContent, setNewContent] = useState("");
   const [newCategory, setNewCategory] = useState<FactCategory>("other");
   const [newVisibility, setNewVisibility] = useState<FactVisibility>("private");
+  const [deleteStep, setDeleteStep] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -93,7 +95,8 @@ export default function MemoryScreen() {
   };
 
   const handleDelete = async (factId: string) => {
-    await deleteFact(factId);
+    if (!user) return;
+    await deleteFact(factId, user.username);
     loadData();
   };
 
@@ -120,26 +123,42 @@ export default function MemoryScreen() {
 
   const handleDeleteAll = () => {
     if (!user) return;
+    // Step 1
     Alert.alert(
       "Alle Daten löschen?",
-      "Dies löscht ALLE deine Daten unwiderruflich: Chat-Verlauf, Einstellungen, Fakten, Skills. Fortfahren?",
+      "Dies löscht ALLE deine Daten: Chat-Verlauf, Einstellungen, Fakten, Skills. Fortfahren?",
       [
         { text: "Abbrechen", style: "cancel" },
         {
-          text: "Endgültig löschen",
+          text: "Ja, weiter →",
           style: "destructive",
           onPress: () => {
+            // Step 2
             Alert.alert(
-              "Wirklich alles löschen?",
-              "Letzte Warnung! Diese Aktion kann NICHT rückgängig gemacht werden.",
+              "Bist du wirklich sicher?",
+              "Diese Aktion kann NICHT rückgängig gemacht werden. Wirklich löschen?",
               [
                 { text: "Abbrechen", style: "cancel" },
                 {
-                  text: "JA, ALLES LÖSCHEN",
+                  text: "Weiter →",
                   style: "destructive",
-                  onPress: async () => {
-                    await deleteAllUserData(user.username);
-                    loadData();
+                  onPress: () => {
+                    // Step 3 — final confirmation
+                    Alert.alert(
+                      "Letzte Warnung",
+                      `Du löschst ALLE Daten von \"${user.displayName}\" unwiderruflich. Wirklich?`,
+                      [
+                        { text: "Abbrechen", style: "cancel" },
+                        {
+                          text: "JA, ALLES LÖSCHEN",
+                          style: "destructive",
+                          onPress: async () => {
+                            await deleteAllUserData(user.username);
+                            loadData();
+                          },
+                        },
+                      ]
+                    );
                   },
                 },
               ]
@@ -150,8 +169,32 @@ export default function MemoryScreen() {
     );
   };
 
-  const myFacts = facts.filter((f) => f.createdBy === user?.username);
-  const familyFacts = facts.filter(
+  const openShareModal = () => {
+    setAddVisibilityPreset("family");
+    setNewVisibility("family");
+    setNewContent("");
+    setNewCategory("other");
+    setShowAddModal(true);
+  };
+
+  const openPrivateModal = () => {
+    setAddVisibilityPreset("private");
+    setNewVisibility("private");
+    setNewContent("");
+    setNewCategory("other");
+    setShowAddModal(true);
+  };
+
+  // Private facts I created
+  const myPrivateFacts = facts.filter(
+    (f) => f.createdBy === user?.username && f.visibility === "private"
+  );
+  // Family facts I'm sharing
+  const mySharedFacts = facts.filter(
+    (f) => f.createdBy === user?.username && f.visibility === "family"
+  );
+  // Family facts shared by others
+  const othersSharedFacts = facts.filter(
     (f) => f.visibility === "family" && f.createdBy !== user?.username
   );
 
@@ -174,7 +217,7 @@ export default function MemoryScreen() {
           Gedächtnis & Privatsphäre
         </Text>
         <Pressable
-          onPress={() => setShowAddModal(true)}
+          onPress={openPrivateModal}
           className="bg-nexus-accent rounded-lg px-3 py-1.5 active:opacity-80"
         >
           <Text className="text-nexus-bg text-xs font-bold">+ Fakt</Text>
@@ -182,22 +225,23 @@ export default function MemoryScreen() {
       </View>
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        {/* Mein Gedächtnis */}
+        {/* Section 1: Mein Gedächtnis (Privat) */}
         <View className="px-5 pt-5">
           <Text className="text-nexus-accent text-xs font-bold uppercase tracking-wider mb-3">
-            Mein Gedächtnis ({myFacts.length})
+            Mein Gedächtnis – Privat ({myPrivateFacts.length})
           </Text>
-          {myFacts.length === 0 ? (
-            <View className="bg-nexus-surface border border-nexus-border rounded-2xl p-4 items-center">
-              <Text className="text-nexus-textDim text-sm">
-                Keine gespeicherten Fakten
+          {myPrivateFacts.length === 0 ? (
+            <View className="bg-nexus-surface border border-nexus-border rounded-2xl p-5 items-center gap-1">
+              <Text className="text-2xl">🧠</Text>
+              <Text className="text-nexus-textDim text-sm mt-1">
+                Nexus hat noch nichts gespeichert
               </Text>
-              <Text className="text-nexus-textDim text-xs mt-1">
-                Fakten werden aus Gesprächen extrahiert oder manuell hinzugefügt
+              <Text className="text-nexus-textDim text-xs text-center">
+                Fakten werden aus Gesprächen gelernt oder manuell hinzugefügt
               </Text>
             </View>
           ) : (
-            myFacts.map((fact) => (
+            myPrivateFacts.map((fact) => (
               <View
                 key={fact.id}
                 className="bg-nexus-surface border border-nexus-border rounded-xl p-3 mb-2 flex-row items-start gap-3"
@@ -207,39 +251,24 @@ export default function MemoryScreen() {
                 </Text>
                 <View className="flex-1">
                   <Text className="text-nexus-text text-sm">{fact.content}</Text>
-                  <View className="flex-row items-center gap-2 mt-1">
-                    <Pressable onPress={() => handleToggleVisibility(fact)}>
-                      <View
-                        className="rounded px-1.5 py-0.5"
-                        style={{
-                          backgroundColor:
-                            VISIBILITY_LABELS[fact.visibility].color + "25",
-                        }}
-                      >
-                        <Text
-                          className="text-[10px] font-medium"
-                          style={{
-                            color: VISIBILITY_LABELS[fact.visibility].color,
-                          }}
-                        >
-                          {VISIBILITY_LABELS[fact.visibility].label}
-                        </Text>
-                      </View>
-                    </Pressable>
+                  <View className="flex-row items-center gap-2 mt-1 flex-wrap">
+                    <View
+                      className="rounded px-1.5 py-0.5"
+                      style={{ backgroundColor: "#E5534B25" }}
+                    >
+                      <Text className="text-[10px] font-medium" style={{ color: "#E5534B" }}>
+                        {CATEGORY_LABELS[fact.category]?.label}
+                      </Text>
+                    </View>
                     <Text className="text-nexus-textDim text-[10px]">
                       {new Date(fact.createdAt).toLocaleDateString("de-DE")}
                     </Text>
                     {fact.source === "chat_extracted" && (
-                      <Text className="text-nexus-textDim text-[10px]">
-                        • aus Chat
-                      </Text>
+                      <Text className="text-nexus-textDim text-[10px]">• aus Chat</Text>
                     )}
                   </View>
                 </View>
-                <Pressable
-                  onPress={() => handleDelete(fact.id)}
-                  className="active:opacity-70"
-                >
+                <Pressable onPress={() => handleDelete(fact.id)} className="active:opacity-70 p-1">
                   <Ionicons name="trash-outline" size={16} color="#E5534B" />
                 </Pressable>
               </View>
@@ -247,35 +276,83 @@ export default function MemoryScreen() {
           )}
         </View>
 
-        {/* Familienwissen */}
+        {/* Section 2: Familienwissen (Geteilt) */}
         <View className="px-5 pt-5">
-          <Text className="text-nexus-accent text-xs font-bold uppercase tracking-wider mb-3">
-            Familienwissen ({familyFacts.length})
-          </Text>
-          {familyFacts.length === 0 ? (
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-nexus-accent text-xs font-bold uppercase tracking-wider">
+              Familienwissen – Geteilt
+            </Text>
+            <Pressable
+              onPress={openShareModal}
+              className="bg-nexus-surface border border-nexus-accent/50 rounded-lg px-2.5 py-1 active:opacity-70"
+            >
+              <Text className="text-nexus-accent text-[11px] font-semibold">+ Fakt teilen</Text>
+            </Pressable>
+          </View>
+
+          {/* Facts I'm sharing */}
+          {mySharedFacts.length > 0 && (
+            <>
+              <Text className="text-nexus-textDim text-[10px] uppercase tracking-wider mb-2 ml-1">
+                Von mir geteilt
+              </Text>
+              {mySharedFacts.map((fact) => (
+                <View
+                  key={fact.id}
+                  className="bg-nexus-surface border border-green-500/20 rounded-xl p-3 mb-2 flex-row items-start gap-3"
+                >
+                  <Text className="text-lg mt-0.5">
+                    {CATEGORY_LABELS[fact.category]?.icon || "📝"}
+                  </Text>
+                  <View className="flex-1">
+                    <Text className="text-nexus-text text-sm">{fact.content}</Text>
+                    <Text className="text-nexus-textDim text-[10px] mt-1">
+                      {new Date(fact.createdAt).toLocaleDateString("de-DE")} • Für Familie sichtbar
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => updateFact(fact.id, { visibility: "private" }).then(loadData)}
+                    className="bg-nexus-card rounded-lg px-2 py-1 active:opacity-70"
+                  >
+                    <Text className="text-nexus-textDim text-[10px]">Nicht mehr teilen</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </>
+          )}
+
+          {/* Facts shared by others */}
+          {othersSharedFacts.length > 0 && (
+            <>
+              <Text className="text-nexus-textDim text-[10px] uppercase tracking-wider mb-2 ml-1 mt-2">
+                Von Familie geteilt
+              </Text>
+              {othersSharedFacts.map((fact) => (
+                <View
+                  key={fact.id}
+                  className="bg-nexus-surface border border-nexus-border rounded-xl p-3 mb-2 flex-row items-start gap-3"
+                >
+                  <Text className="text-lg mt-0.5">
+                    {CATEGORY_LABELS[fact.category]?.icon || "📝"}
+                  </Text>
+                  <View className="flex-1">
+                    <Text className="text-nexus-text text-sm">{fact.content}</Text>
+                    <Text className="text-nexus-textDim text-[10px] mt-1">
+                      Von {fact.createdBy} • {new Date(fact.createdAt).toLocaleDateString("de-DE")}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+
+          {mySharedFacts.length === 0 && othersSharedFacts.length === 0 && (
             <View className="bg-nexus-surface border border-nexus-border rounded-2xl p-4 items-center">
-              <Text className="text-nexus-textDim text-sm">
-                Keine geteilten Fakten
+              <Text className="text-nexus-textDim text-sm">Keine geteilten Fakten</Text>
+              <Text className="text-nexus-textDim text-xs mt-1 text-center">
+                Teile Infos mit der Familie, z.B. Termine oder Allergien
               </Text>
             </View>
-          ) : (
-            familyFacts.map((fact) => (
-              <View
-                key={fact.id}
-                className="bg-nexus-surface border border-nexus-border rounded-xl p-3 mb-2 flex-row items-start gap-3"
-              >
-                <Text className="text-lg mt-0.5">
-                  {CATEGORY_LABELS[fact.category]?.icon || "📝"}
-                </Text>
-                <View className="flex-1">
-                  <Text className="text-nexus-text text-sm">{fact.content}</Text>
-                  <Text className="text-nexus-textDim text-[10px] mt-1">
-                    Von {fact.createdBy} •{" "}
-                    {new Date(fact.createdAt).toLocaleDateString("de-DE")}
-                  </Text>
-                </View>
-              </View>
-            ))
           )}
         </View>
 

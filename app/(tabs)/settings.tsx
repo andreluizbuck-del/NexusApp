@@ -247,6 +247,27 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
+        {/* DATENSCHUTZ */}
+        <SettingsSection title="Datenschutz & Gedächtnis">
+          <Pressable
+            onPress={() => router.push("/memory")}
+            className="flex-row items-center justify-between py-1 active:opacity-70"
+          >
+            <View className="flex-row items-center gap-3">
+              <Text className="text-lg">🧠</Text>
+              <View>
+                <Text className="text-nexus-text text-sm font-medium">
+                  Mein Gedächtnis
+                </Text>
+                <Text className="text-nexus-textDim text-xs">
+                  Gespeicherte Fakten, Inkognito, Daten löschen
+                </Text>
+              </View>
+            </View>
+            <Text className="text-nexus-textDim text-lg">›</Text>
+          </Pressable>
+        </SettingsSection>
+
         {/* SPEICHERN */}
         <Pressable
           onPress={handleSave}

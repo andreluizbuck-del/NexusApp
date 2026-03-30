@@ -5,7 +5,7 @@ export type FactCategory =
   | "health"
   | "schedule"
   | "preference"
-  | "contact"
+  | "work"
   | "other";
 export type FactVisibility = "private" | "family" | "admin_only";
 export type FactSource = "manual" | "chat_extracted" | "user_shared";
@@ -21,9 +21,8 @@ export interface KnowledgeFact {
   verified: boolean;
 }
 
-const FACTS_KEY = "nexus_facts";
+const FACTS_KEY = "nexus_knowledge_facts";
 const PRIVACY_KEY = "nexus_privacy";
-const INCOGNITO_KEY = "nexus_incognito";
 
 export interface PrivacySettings {
   memoryEnabled: boolean;
@@ -87,9 +86,22 @@ export async function addFact(fact: KnowledgeFact): Promise<void> {
   await saveFacts(facts);
 }
 
-export async function deleteFact(factId: string): Promise<void> {
+/**
+ * Only the creator or admin (andre) can delete a fact.
+ * Returns true if deleted, false if not authorized.
+ */
+export async function deleteFact(
+  factId: string,
+  requestingUsername: string
+): Promise<boolean> {
   const facts = await loadFacts();
+  const fact = facts.find((f) => f.id === factId);
+  if (!fact) return false;
+  if (fact.createdBy !== requestingUsername && requestingUsername !== "andre") {
+    return false;
+  }
   await saveFacts(facts.filter((f) => f.id !== factId));
+  return true;
 }
 
 export async function updateFact(
@@ -112,10 +124,48 @@ export async function getVisibleFacts(
   const facts = await loadFacts();
   return facts.filter((f) => {
     if (f.visibility === "private") return f.createdBy === username;
-    if (f.visibility === "admin_only") return userRole === "admin";
-    if (f.visibility === "family") return userRole !== "guest";
+    if (f.visibility === "admin_only") return username === "andre";
+    if (f.visibility === "family")
+      return userRole === "family" || userRole === "admin";
     return false;
   });
+}
+
+// Alias used in api.ts
+export const getFactsVisibleTo = getVisibleFacts;
+
+/**
+ * Returns a formatted string of facts to inject into the system prompt.
+ * Returns empty string when incognito or no facts.
+ */
+export async function injectFactsIntoPrompt(
+  username: string,
+  userRole: string
+): Promise<string> {
+  const facts = await getVisibleFacts(username, userRole);
+  if (facts.length === 0) return "";
+
+  const myFacts = facts.filter(
+    (f) => f.createdBy === username && f.visibility === "private"
+  );
+  const familyFacts = facts.filter((f) => f.visibility === "family");
+
+  const lines: string[] = ["\n--- GEDÄCHTNIS ---"];
+
+  if (myFacts.length > 0) {
+    lines.push("[MEINE PRIVATEN INFORMATIONEN – nur für diesen Nutzer]");
+    myFacts.forEach((f) => lines.push(`• ${f.content}`));
+  }
+
+  if (familyFacts.length > 0) {
+    lines.push("[FAMILIENWISSEN – geteilt]");
+    familyFacts.forEach((f) =>
+      lines.push(`• ${f.content} (geteilt von ${f.createdBy})`)
+    );
+  }
+
+  lines.push("--- ENDE GEDÄCHTNIS ---");
+  return lines.join("\n");
 }
 
 // --- Auto Fact Extraction ---
@@ -158,8 +208,13 @@ const EXTRACTION_PATTERNS: {
   },
   {
     regex: /(?:meine|unsere) (?:adresse|anschrift) ist (.+?)(?:\.|!|$)/i,
-    category: "contact",
+    category: "other",
     extract: (m) => `Adresse: ${m[1].trim()}`,
+  },
+  {
+    regex: /ich (?:arbeite|bin beschäftigt) (?:bei|als|in) (.+?)(?:\.|!|$)/i,
+    category: "work",
+    extract: (m) => `Arbeit: ${m[1].trim()}`,
   },
   {
     regex: /(?:termin|arzttermin|meeting) (?:am|um|bei) (.+?)(?:\.|!|$)/i,
@@ -204,6 +259,12 @@ export async function deleteAllUserData(username: string): Promise<void> {
   // Remove user's skill ratings
   await AsyncStorage.removeItem(`nexus_skill_ratings_${username}`);
 
-  // Remove user's reminders
-  await AsyncStorage.removeItem(`nexus_reminders_${username}`);
+  // Remove user's reminders and proactive messages
+  await AsyncStorage.multiRemove([
+    `nexus_reminders_${username}`,
+    `nexus_proactive_${username}`,
+  ]);
+
+  // Clear in-memory incognito state
+  incognitoUsers.delete(username);
 }
