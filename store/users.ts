@@ -40,7 +40,7 @@ export const DEFAULT_USERS: NexusUser[] = [
     id: "andre",
     username: "andre",
     displayName: "Andre",
-    password: "nexus2026",
+    password: "4985",
     role: "admin",
     emoji: "👑",
     age: 15,
