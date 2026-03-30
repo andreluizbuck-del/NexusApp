@@ -23,6 +23,58 @@ export interface DeviceAgent {
 }
 
 const AGENTS_KEY = "nexus_agents_v1";
+const COMMANDS_KEY = "nexus_agent_commands";
+
+// --- AgentCommand ---
+
+export interface AgentCommand {
+  id: string;
+  agentId: string;
+  agentName: string;
+  command: string;
+  status: "pending" | "running" | "done" | "failed";
+  result?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+// --- Default preconfigured agents ---
+
+export const DEFAULT_AGENTS: DeviceAgent[] = [
+  {
+    id: "andre-pc",
+    name: "Andres Gaming PC",
+    deviceType: "windows_pc",
+    owner: "andre",
+    tailscaleIP: "100.x.x.x",
+    isOnline: false,
+    lastSeen: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    capabilities: ["browser_control", "file_manager", "pc_status", "trading_monitor", "screenshot"],
+    isEnabled: true,
+  },
+  {
+    id: "pi",
+    name: "Raspberry Pi",
+    deviceType: "raspberry_pi",
+    owner: "andre",
+    tailscaleIP: "100.x.x.x",
+    isOnline: false,
+    lastSeen: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    capabilities: ["wake_on_lan", "network_monitor", "vpn_status", "uptime_monitor", "server_health"],
+    isEnabled: true,
+  },
+  {
+    id: "schwester-laptop",
+    name: "Schwester Laptop",
+    deviceType: "laptop_windows",
+    owner: "schwester",
+    tailscaleIP: "100.x.x.x",
+    isOnline: false,
+    lastSeen: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    capabilities: ["document_analyzer", "flashcard_creator", "file_organizer"],
+    isEnabled: true,
+  },
+];
 
 export const DEVICE_ICONS: Record<DeviceType, string> = {
   windows_pc: "🖥️",
@@ -124,9 +176,15 @@ export const CAPABILITY_LABELS: Record<string, string> = {
 
 // --- Agent CRUD ---
 
+/**
+ * Load agents. Seeds DEFAULT_AGENTS on first run (if storage is empty).
+ */
 export async function loadAgents(): Promise<DeviceAgent[]> {
   const data = await AsyncStorage.getItem(AGENTS_KEY);
-  return data ? JSON.parse(data) : [];
+  if (data) return JSON.parse(data);
+  // First run — seed defaults
+  await saveAgents(DEFAULT_AGENTS);
+  return DEFAULT_AGENTS;
 }
 
 export async function saveAgents(agents: DeviceAgent[]): Promise<void> {
@@ -261,6 +319,166 @@ export async function findAgentForCommand(
 }
 
 // --- Install Instructions ---
+
+// --- AgentCommand CRUD ---
+
+export async function loadCommands(): Promise<AgentCommand[]> {
+  const data = await AsyncStorage.getItem(COMMANDS_KEY);
+  return data ? JSON.parse(data) : [];
+}
+
+async function saveCommands(cmds: AgentCommand[]): Promise<void> {
+  await AsyncStorage.setItem(COMMANDS_KEY, JSON.stringify(cmds.slice(-100)));
+}
+
+export async function createCommand(
+  agentId: string,
+  agentName: string,
+  command: string
+): Promise<AgentCommand> {
+  const cmd: AgentCommand = {
+    id: Date.now().toString(),
+    agentId,
+    agentName,
+    command,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+  const cmds = await loadCommands();
+  cmds.push(cmd);
+  await saveCommands(cmds);
+  return cmd;
+}
+
+/**
+ * Simulate agent execution — resolves after 2 seconds with a fake result.
+ * Replace with real WebSocket call when backend is ready.
+ */
+export async function simulateExecution(cmdId: string): Promise<string> {
+  const cmds = await loadCommands();
+  const idx = cmds.findIndex((c) => c.id === cmdId);
+  if (idx < 0) return "Befehl nicht gefunden.";
+
+  // Mark running
+  cmds[idx].status = "running";
+  await saveCommands(cmds);
+
+  // Simulate 2s delay
+  await new Promise((r) => setTimeout(r, 2000));
+
+  const cmd = cmds[idx];
+  const result = generateSimulatedResult(cmd.command);
+
+  cmds[idx].status = "done";
+  cmds[idx].result = result;
+  cmds[idx].completedAt = new Date().toISOString();
+  await saveCommands(cmds);
+  return result;
+}
+
+function generateSimulatedResult(command: string): string {
+  const lower = command.toLowerCase();
+  if (lower.includes("status") || lower.includes("pc")) {
+    return "CPU: 12% · RAM: 6.2/16 GB · GPU: RTX 4070 23% · Temp: 45°C · Uptime: 3h 22min";
+  }
+  if (lower.includes("browser") || lower.includes("öffne")) {
+    return "Browser geöffnet.";
+  }
+  if (lower.includes("screenshot")) {
+    return "Screenshot erstellt und gespeichert.";
+  }
+  if (lower.includes("trading")) {
+    return "Trading Bot aktiv · Letzter Trade: vor 14 Min · P&L heute: +2.3%";
+  }
+  if (lower.includes("weck") || lower.includes("wake")) {
+    return "Magic Packet gesendet. PC sollte in ~30 Sekunden online sein.";
+  }
+  if (lower.includes("vpn")) {
+    return "WireGuard VPN aktiv · 3 Peers verbunden · ↑ 1.2 MB/s ↓ 0.4 MB/s";
+  }
+  if (lower.includes("netzwerk") || lower.includes("network")) {
+    return "4 Geräte online: PC (192.168.1.10), Laptop (192.168.1.11), Pi (192.168.1.1), Phone (192.168.1.20)";
+  }
+  if (lower.includes("karteikarten") || lower.includes("flashcard")) {
+    return "15 Karteikarten erstellt und in Lernliste gespeichert.";
+  }
+  if (lower.includes("dokument") || lower.includes("analysiere")) {
+    return "Dokument analysiert: 12 Seiten · Hauptthemen: 3 · Zusammenfassung erstellt.";
+  }
+  return "Befehl ausgeführt. ✓";
+}
+
+// --- Capability suggestions per device type ---
+
+export const CAPABILITY_SUGGESTIONS: Record<DeviceType, string[]> = {
+  windows_pc: [
+    "Zeig PC Status",
+    "Mach einen Screenshot",
+    "Trading Bot Status",
+    "Öffne YouTube",
+  ],
+  raspberry_pi: [
+    "Wecke meinen PC auf",
+    "VPN Status",
+    "Netzwerk Status",
+    "Zeig Uptime",
+  ],
+  laptop_mac: [
+    "Analysiere dieses Dokument",
+    "Erstelle Karteikarten",
+    "Dateien sortieren",
+  ],
+  laptop_windows: [
+    "Analysiere dieses Dokument",
+    "Erstelle Karteikarten",
+    "Dateien sortieren",
+  ],
+  android: ["Kalender lesen", "Standort", "Dokument scannen"],
+  ios: ["Kalender lesen", "Standort", "Dokument scannen"],
+};
+
+// --- Setup guide steps per device type ---
+
+export const SETUP_GUIDE: Record<DeviceType, { step: number; text: string }[]> = {
+  windows_pc: [
+    { step: 1, text: "Python 3.11+ installieren: python.org/downloads" },
+    { step: 2, text: "Terminal öffnen und ausführen:\npip install requests psutil playwright" },
+    { step: 3, text: "playwright install chromium" },
+    { step: 4, text: "API Key in .env setzen:\nEXPO_PUBLIC_CLAUDE_API_KEY=sk-ant-..." },
+    { step: 5, text: "Agenten starten:\npython nexus_agent.py --type windows --owner andre" },
+    { step: 6, text: "Tailscale IP in der App eintragen" },
+  ],
+  raspberry_pi: [
+    { step: 1, text: "Raspberry Pi OS installieren (64-bit empfohlen)" },
+    { step: 2, text: "Tailscale installieren:\ncurl -fsSL https://tailscale.com/install.sh | sh" },
+    { step: 3, text: "tailscale up — einloggen und verbinden" },
+    { step: 4, text: "pip3 install requests wakeonlan psutil" },
+    { step: 5, text: "python3 nexus_agent.py --type pi" },
+    { step: 6, text: "Wake-on-LAN MAC-Adresse in den Agent-Einstellungen hinterlegen" },
+  ],
+  laptop_mac: [
+    { step: 1, text: "Python 3.11+ installieren: python.org oder brew install python" },
+    { step: 2, text: "pip3 install requests psutil watchdog pymupdf" },
+    { step: 3, text: "python3 nexus_agent.py --type laptop --owner [deinName]" },
+    { step: 4, text: "Tailscale IP in der App eintragen" },
+  ],
+  laptop_windows: [
+    { step: 1, text: "Python 3.11+ installieren: python.org/downloads" },
+    { step: 2, text: "pip install requests psutil watchdog pymupdf" },
+    { step: 3, text: "python nexus_agent.py --type laptop --owner [deinName]" },
+    { step: 4, text: "Tailscale IP in der App eintragen" },
+  ],
+  android: [
+    { step: 1, text: "Nexus App auf dem Android-Gerät installieren" },
+    { step: 2, text: "In der App einloggen und Agent-Modus aktivieren" },
+    { step: 3, text: "Berechtigungen erteilen: Kalender, Kamera, Standort" },
+  ],
+  ios: [
+    { step: 1, text: "Nexus App aus dem App Store installieren" },
+    { step: 2, text: "Einloggen und Agent-Modus aktivieren" },
+    { step: 3, text: "Berechtigungen erteilen: Kalender, Kamera, Standort" },
+  ],
+};
 
 export function getInstallInstructions(
   deviceType: DeviceType,

@@ -7,6 +7,7 @@ import { useAuth } from "../../store/AuthContext";
 import { loadChatHistory, ChatMessage } from "../../store/chatHistory";
 import { getActiveSkills, Skill } from "../../store/skills";
 import { testConnection } from "../../services/api";
+import { loadAgents, DeviceAgent } from "../../store/agents";
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -33,6 +34,7 @@ export default function HomeScreen() {
     ok: boolean;
     latency: number;
   } | null>(null);
+  const [agents, setAgents] = useState<DeviceAgent[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -41,6 +43,7 @@ export default function HomeScreen() {
       setRecentMessages(msgs.slice(-3))
     );
     testConnection().then(setServerStatus);
+    loadAgents().then(setAgents);
   }, [user]);
 
   const quickActions = [
@@ -171,6 +174,28 @@ export default function HomeScreen() {
             )}
           </View>
         </View>
+
+        {/* AGENT STATUS */}
+        {agents.length > 0 && (
+          <View className="px-5 mb-5">
+            <Text className="text-nexus-accent text-xs font-bold uppercase tracking-wider mb-2 ml-1">
+              Agenten
+            </Text>
+            <Pressable
+              onPress={() => router.push("/agents")}
+              className="bg-nexus-surface border border-nexus-border rounded-2xl p-4 flex-row items-center gap-3 active:bg-nexus-card"
+            >
+              <Text className="text-2xl">🖥️</Text>
+              <View className="flex-1">
+                <Text className="text-nexus-text text-sm font-medium">
+                  🟢 {agents.filter((a) => a.isOnline).length} online · 🔴 {agents.filter((a) => !a.isOnline).length} offline
+                </Text>
+                <Text className="text-nexus-textDim text-xs">{agents.length} Geräte konfiguriert</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#555" />
+            </Pressable>
+          </View>
+        )}
 
         {/* SERVER STATUS */}
         <View className="px-5 mb-5">
